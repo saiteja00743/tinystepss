@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/constants/app_theme.dart';
+import '../widgets/child_avatar.dart';
+import '../widgets/status_chip.dart';
+import '../widgets/empty_state.dart';
 
 /// Parent Home Screen — Squad B's home base
 /// TODO (Child Profiles Squad): Replace placeholder cards with child list
@@ -32,7 +35,7 @@ class ParentHomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -47,8 +50,9 @@ class ParentHomeScreen extends StatelessWidget {
               spacing: AppSpacing.md,
               runSpacing: AppSpacing.md,
               children: [
-                _ChildAvatar(name: 'Leo', status: 'In Class', color: Colors.blue),
-                _ChildAvatar(name: 'Mia', status: 'Checked Out', color: Colors.orange),
+                const ChildAvatar(name: 'Leo', status: 'In Class', color: Colors.blue, size: 60),
+                const ChildAvatar(name: 'Mia', status: 'Checked Out', color: Colors.orange, size: 60),
+                const ChildAvatar(name: 'S', status: 'Large Demo', color: Colors.purple, size: 80), // Larger variant
               ],
             ),
             
@@ -70,6 +74,58 @@ class ParentHomeScreen extends StatelessWidget {
               color: AppColors.success,
               onTap: () {/* TODO: navigate to attendance screen */},
             ),
+
+            const SizedBox(height: AppSpacing.xl),
+            Text('Quick Examples (Squad B)', style: AppTextStyles.labelBold.copyWith(color: AppColors.textMuted)),
+            const SizedBox(height: AppSpacing.md),
+            
+            // Example 1: Status Badges for different scenarios
+            Text('Status Badges:', style: AppTextStyles.caption),
+            const SizedBox(height: AppSpacing.xs),
+            const Wrap(
+              spacing: AppSpacing.sm,
+              children: [
+                StatusChip(status: 'Checked In'),
+                StatusChip(status: 'At Home'),
+                StatusChip(status: 'Checked Out'),
+              ],
+            ),
+            
+            const SizedBox(height: AppSpacing.lg),
+            
+            // Example 2: Empty State for messages
+            Text('Empty Messages List:', style: AppTextStyles.caption),
+            const SizedBox(height: AppSpacing.xs),
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              child: const EmptyState(
+                label: 'No messages yet.\nCheck back later for teacher updates!',
+                icon: Icons.forum_outlined,
+              ),
+            ),
+            
+            const SizedBox(height: AppSpacing.md),
+            
+            // Example 3: Empty State for calendar/events
+            Text('Empty Calendar:', style: AppTextStyles.caption),
+            const SizedBox(height: AppSpacing.xs),
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              child: const EmptyState(
+                label: 'No events scheduled for this week.',
+                icon: Icons.event_busy_outlined,
+              ),
+            ),
           ],
         ),
       ),
@@ -77,29 +133,6 @@ class ParentHomeScreen extends StatelessWidget {
   }
 }
 
-class _ChildAvatar extends StatelessWidget {
-  final String name;
-  final String status;
-  final Color color;
-
-  const _ChildAvatar({required this.name, required this.status, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        CircleAvatar(
-          radius: 30,
-          backgroundColor: color.withValues(alpha: 0.2),
-          child: Text(name[0], style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 24)),
-        ),
-        const SizedBox(height: 8),
-        Text(name, style: AppTextStyles.labelBold),
-        Text(status, style: AppTextStyles.bodyMuted.copyWith(fontSize: 10, color: status == 'In Class' ? AppColors.success : AppColors.textMuted)),
-      ],
-    );
-  }
-}
 
 class _QuickActionCard extends StatelessWidget {
   const _QuickActionCard({
