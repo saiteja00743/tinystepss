@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -25,6 +27,7 @@ class _LoginScreenState extends State<LoginScreen>
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeAnim;
   late final Animation<Offset> _slideAnim;
+  late final StreamSubscription<AuthState> _authSub;
 
   @override
   void initState() {
@@ -37,10 +40,34 @@ class _LoginScreenState extends State<LoginScreen>
         .animate(
             CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOutCubic));
     _fadeCtrl.forward();
+
+    // Listen for auth state changes so that when a user taps the
+    // verification email link (deep link → PKCE completes), we
+    // automatically navigate them to the correct dashboard.
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (!mounted) return;
+      final event = data.event;
+      final session = data.session;
+      if ((event == AuthChangeEvent.signedIn ||
+              event == AuthChangeEvent.tokenRefreshed) &&
+          session != null) {
+        // Clear any verify banner
+        setState(() => _showVerifyBanner = false);
+        final role =
+            session.user.userMetadata?['role'] as String? ?? 'parent';
+        final route = switch (role) {
+          'teacher' => '/teacher',
+          'admin'   => '/admin',
+          _         => '/parent',
+        };
+        context.go(route);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _authSub.cancel();
     _fadeCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
@@ -56,38 +83,52 @@ class _LoginScreenState extends State<LoginScreen>
     });
 
     try {
-      await Supabase.instance.client.auth.signInWithPassword(
+      final response = await Supabase.instance.client.auth.signInWithPassword(
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text.trim(),
       );
-      // GoRouter redirect handles role-based navigation on success
+      // Explicit role-based navigation (GoRouter refreshListenable also handles this)
+      if (mounted) {
+        final role = response.user?.userMetadata?['role'] as String? ?? 'parent';
+        final route = switch (role) {
+          'teacher' => '/teacher',
+          'admin'   => '/admin',
+          _         => '/parent',
+        };
+        context.go(route);
+      }
     } on AuthException catch (e) {
       if (!mounted) return;
       final msg = e.message.toLowerCase();
+      final code = (e.code ?? '').toLowerCase();
 
-      if (msg.contains('email not confirmed')) {
-        // Show persistent banner — user needs to verify
+      if (msg.contains('email not confirmed') ||
+          code == 'email_not_confirmed') {
+        // Email registered but not verified
         setState(() => _showVerifyBanner = true);
-      } else if (msg.contains('banned') || msg.contains('disabled')) {
-        // Account blocked
+      } else if (msg.contains('banned') ||
+          msg.contains('disabled') ||
+          code == 'user_banned') {
+        // Account blocked by admin
         _showBanner(
           icon: Icons.block_rounded,
           message:
               'Your account has been blocked. Please contact the center admin.',
           color: AppColors.danger,
         );
-      } else if (msg.contains('invalid login credentials') ||
-          msg.contains('invalid password') ||
-          msg.contains('wrong password')) {
-        // Could be wrong password OR non-existent email — offer both options
-        _showCredentialErrorDialog();
       } else {
-        _showBanner(
-          icon: Icons.error_outline_rounded,
-          message: 'Something went wrong. Please try again.',
-          color: AppColors.danger,
-        );
+        // Wrong password, unregistered email, invalid_credentials, etc.
+        // All auth failures that aren't verify/ban → show the dialog
+        _showCredentialErrorDialog();
       }
+    } catch (_) {
+      // Only truly unexpected errors (network down, timeout, etc.)
+      if (!mounted) return;
+      _showBanner(
+        icon: Icons.wifi_off_rounded,
+        message: 'Connection error. Check your internet and try again.',
+        color: AppColors.danger,
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -98,48 +139,54 @@ class _LoginScreenState extends State<LoginScreen>
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).brightness == Brightness.dark
-            ? AppColors.bgDarkSurface
-            : AppColors.bgSurface,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.xl)),
-        icon: const Icon(Icons.help_outline_rounded,
-            color: AppColors.primary, size: 36),
-        title: Text('Couldn\'t sign you in',
-            style: AppTextStyles.heading3,
-            textAlign: TextAlign.center),
-        content: Text(
-          'The email or password you entered is incorrect, or no account exists with this email.\n\nNew here?',
-          style: AppTextStyles.bodyMedium
-              .copyWith(color: AppColors.textMuted),
-          textAlign: TextAlign.center,
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Try again',
-                style: TextStyle(color: AppColors.textMuted)),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return AlertDialog(
+          backgroundColor: isDark ? AppColors.bgDarkSurface : AppColors.bgSurface,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.xl)),
+          icon: const Icon(Icons.help_outline_rounded,
+              color: AppColors.primary, size: 36),
+          title: Text(
+            'Couldn\'t sign you in',
+            style: AppTextStyles.heading3.copyWith(color: cs.onSurface),
+            textAlign: TextAlign.center,
           ),
-          const SizedBox(width: 8),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.full)),
+          content: Text(
+            'The email or password is incorrect, or no account exists with this email.\n\nNew here?',
+            style: AppTextStyles.bodyMedium
+                .copyWith(color: cs.onSurface.withValues(alpha: 0.55)),
+            textAlign: TextAlign.center,
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Try again',
+                  style: TextStyle(
+                      color: cs.onSurface.withValues(alpha: 0.55))),
             ),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              context.go('/register');
-            },
-            child: const Text('Create account'),
-          ),
-        ],
-      ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.full)),
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                context.go('/register');
+              },
+              child: const Text('Create account'),
+            ),
+          ],
+        );
+      },
     );
   }
+
 
   void _showBanner({
     required IconData icon,

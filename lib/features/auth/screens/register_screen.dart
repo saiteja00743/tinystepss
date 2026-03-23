@@ -44,9 +44,10 @@ class _RegisterScreenState extends State<RegisterScreen>
   // ── Parent: first child ───────────────────────────────────────────────
   final _childNameCtrl = TextEditingController();
   DateTime? _childDob;
-  String _childGender = 'Not specified';
+  String _childGender = 'male';
   final _childAllergyCtrl = TextEditingController();
   final _childMedCtrl = TextEditingController();
+  final _classroomCodeCtrl = TextEditingController(); // optional classroom code
 
   // ── Teacher-specific ──────────────────────────────────────────────────
   final _staffIdCtrl = TextEditingController();
@@ -88,7 +89,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     for (final c in [
       _nameCtrl, _emailCtrl, _phoneCtrl, _passCtrl, _confirmCtrl,
       _referralCtrl, _emergencyNameCtrl, _emergencyPhoneCtrl, _relationCtrl,
-      _childNameCtrl, _childAllergyCtrl, _childMedCtrl,
+      _childNameCtrl, _childAllergyCtrl, _childMedCtrl, _classroomCodeCtrl,
       _staffIdCtrl, _designationCtrl, _centerNameCtrl, _adminDesigCtrl,
     ]) {
       c.dispose();
@@ -118,6 +119,8 @@ class _RegisterScreenState extends State<RegisterScreen>
           meta['child_gender'] = _childGender;
           meta['child_allergies'] = _childAllergyCtrl.text.trim();
           meta['child_medical_notes'] = _childMedCtrl.text.trim();
+          // Classroom code — trigger resolves classroom_id + teacher_id
+          meta['child_classroom_code'] = _classroomCodeCtrl.text.trim().toUpperCase();
           break;
         case 'teacher':
           meta['staff_id'] = _staffIdCtrl.text.trim();
@@ -171,44 +174,53 @@ class _RegisterScreenState extends State<RegisterScreen>
   void _showEmailInUseDialog() {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).brightness == Brightness.dark
-            ? AppColors.bgDarkSurface : AppColors.bgSurface,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.xl)),
-        icon: const Icon(Icons.email_outlined,
-            color: AppColors.primary, size: 36),
-        title: Text('Email already registered',
-            style: AppTextStyles.heading3, textAlign: TextAlign.center),
-        content: Text(
-          'An account with this email already exists. Did you mean to sign in instead?',
-          style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textMuted),
-          textAlign: TextAlign.center,
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Stay here',
-                style: TextStyle(color: AppColors.textMuted)),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return AlertDialog(
+          backgroundColor: isDark ? AppColors.bgDarkSurface : AppColors.bgSurface,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.xl)),
+          icon: const Icon(Icons.email_outlined,
+              color: AppColors.primary, size: 36),
+          title: Text(
+            'Email already registered',
+            style: AppTextStyles.heading3.copyWith(color: cs.onSurface),
+            textAlign: TextAlign.center,
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.full)),
+          content: Text(
+            'An account with this email already exists. Did you mean to sign in instead?',
+            style: AppTextStyles.bodyMedium
+                .copyWith(color: cs.onSurface.withValues(alpha: 0.55)),
+            textAlign: TextAlign.center,
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Stay here',
+                  style: TextStyle(
+                      color: cs.onSurface.withValues(alpha: 0.55))),
             ),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              context.go('/login');
-            },
-            child: const Text('Sign in instead'),
-          ),
-        ],
-      ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.full)),
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                context.go('/login');
+              },
+              child: const Text('Sign in instead'),
+            ),
+          ],
+        );
+      },
     );
   }
+
 
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -397,13 +409,20 @@ class _RegisterScreenState extends State<RegisterScreen>
           childGender: _childGender,
           allergyCtrl: _childAllergyCtrl,
           medCtrl: _childMedCtrl,
+          classroomCodeCtrl: _classroomCodeCtrl,
           isDark: isDark,
           cs: cs,
           loading: _loading,
           onPickDob: _pickDob,
           onGenderChange: (v) => setState(() => _childGender = v!),
           onSubmit: () {
-            if (_step2Key.currentState!.validate()) _submit();
+            if (_step2Key.currentState!.validate()) {
+              if (_childDob == null) {
+                _showError('Please select your child\'s date of birth.');
+                return;
+              }
+              _submit();
+            }
           },
         );
       default:
@@ -430,10 +449,10 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────
 // STEP 0 — Role Selection
-// ─────────────────────────────────────────────────────────────────────────────
-class _RoleSelectionStep extends StatelessWidget {
+// ───────────────────────────────────────────────────────────────────────────────
+class _RoleSelectionStep extends StatefulWidget {
   const _RoleSelectionStep({
     required this.selected,
     required this.onSelect,
@@ -447,20 +466,24 @@ class _RoleSelectionStep extends StatelessWidget {
   final ColorScheme cs;
   final bool isDark;
 
-  static const _roles = [
-    {'key': 'parent', 'title': 'Parent', 'sub': "I'm enrolling my child",
-     'icon': Icons.family_restroom_rounded, 'color': AppColors.primary},
-    {'key': 'teacher', 'title': 'Teacher', 'sub': 'I work at the daycare',
-     'icon': Icons.school_rounded, 'color': AppColors.secondary},
-    {'key': 'admin', 'title': 'Admin', 'sub': 'I manage the center',
-     'icon': Icons.admin_panel_settings_rounded, 'color': AppColors.accent},
-  ];
+  @override
+  State<_RoleSelectionStep> createState() => _RoleSelectionStepState();
+}
+
+class _RoleSelectionStepState extends State<_RoleSelectionStep> {
+  bool _showStaffOptions = false;
 
   @override
   Widget build(BuildContext context) {
+    final cs = widget.cs;
+    final isDark = widget.isDark;
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: AppSpacing.md),
+
+        // ── Heading ──────────────────────────────────────────────────
         ShaderMask(
           shaderCallback: (b) => const LinearGradient(
             colors: [AppColors.primary, AppColors.secondary],
@@ -472,42 +495,134 @@ class _RoleSelectionStep extends StatelessWidget {
                   color: Colors.white)),
         ),
         const SizedBox(height: AppSpacing.xs),
-        Text('Choose how you\'re joining',
+        Text('Welcome — let\'s get you set up',
             style: Theme.of(context)
                 .textTheme
                 .bodyMedium
                 ?.copyWith(color: cs.onSurface.withValues(alpha: 0.5))),
+
+        const SizedBox(height: AppSpacing.xxl),
+
+        // ── Parent hero card (primary CTA) ───────────────────────────
+        _ParentHeroCard(
+          isDark: isDark,
+          cs: cs,
+          onTap: () => widget.onSelect('parent'),
+        ),
+
         const SizedBox(height: AppSpacing.xl),
 
-        ..._roles.map((r) {
-          final color = r['color'] as Color;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: _RoleCard(
-              icon: r['icon'] as IconData,
-              title: r['title'] as String,
-              subtitle: r['sub'] as String,
-              color: color,
-              isDark: isDark,
-              onTap: () => onSelect(r['key'] as String),
-            ),
-          );
-        }),
-
-        const SizedBox(height: AppSpacing.lg),
-        GestureDetector(
-          onTap: onLogin,
-          child: RichText(
-            text: TextSpan(
-              style: AppTextStyles.bodySmall
-                  .copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
+        // ── Staff/Admin hidden section ───────────────────────────────
+        Center(
+          child: GestureDetector(
+            onTap: () => setState(() => _showStaffOptions = !_showStaffOptions),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const TextSpan(text: 'Already have an account? '),
-                TextSpan(
-                    text: 'Sign in',
-                    style: const TextStyle(
-                        color: AppColors.primary, fontWeight: FontWeight.w700)),
+                Text(
+                  _showStaffOptions
+                      ? 'Hide staff options'
+                      : 'Are you staff or admin?',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: cs.onSurface.withValues(alpha: 0.45),
+                    decoration: TextDecoration.underline,
+                    decorationColor: cs.onSurface.withValues(alpha: 0.3),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  _showStaffOptions
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 16,
+                  color: cs.onSurface.withValues(alpha: 0.35),
+                ),
               ],
+            ),
+          ),
+        ),
+
+        // ── Animated staff/admin tiles ───────────────────────────────
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 280),
+          crossFadeState: _showStaffOptions
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          firstChild: const SizedBox.shrink(),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: Column(
+              children: [
+                // Info note
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(
+                        color: AppColors.accent.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded,
+                          size: 16,
+                          color: AppColors.accent.withValues(alpha: 0.8)),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          'Staff & admin accounts require a referral code from the center.',
+                          style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.accent
+                                  .withValues(alpha: 0.85)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                _CompactRoleCard(
+                  icon: Icons.school_rounded,
+                  title: 'Teacher / Staff',
+                  subtitle: 'I work at the daycare',
+                  color: AppColors.secondary,
+                  isDark: isDark,
+                  onTap: () => widget.onSelect('teacher'),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _CompactRoleCard(
+                  icon: Icons.admin_panel_settings_rounded,
+                  title: 'Admin',
+                  subtitle: 'I manage the center',
+                  color: AppColors.accent,
+                  isDark: isDark,
+                  onTap: () => widget.onSelect('admin'),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: AppSpacing.xl),
+
+        // ── Already have account ─────────────────────────────────────
+        Center(
+          child: GestureDetector(
+            onTap: widget.onLogin,
+            child: RichText(
+              text: TextSpan(
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: cs.onSurface.withValues(alpha: 0.5)),
+                children: [
+                  const TextSpan(text: 'Already have an account? '),
+                  const TextSpan(
+                    text: 'Sign in',
+                    style: TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -517,8 +632,81 @@ class _RoleSelectionStep extends StatelessWidget {
   }
 }
 
-class _RoleCard extends StatelessWidget {
-  const _RoleCard({
+// ── Parent hero card ──────────────────────────────────────────────────────────
+class _ParentHeroCard extends StatelessWidget {
+  const _ParentHeroCard({
+    required this.isDark,
+    required this.cs,
+    required this.onTap,
+  });
+  final bool isDark;
+  final ColorScheme cs;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: AppGradients.coralButton,
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.35),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.lg, vertical: AppSpacing.xl),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  child: const Icon(Icons.family_restroom_rounded,
+                      color: Colors.white, size: 32),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Join as Parent',
+                          style: GoogleFonts.lexend(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white)),
+                      const SizedBox(height: 4),
+                      Text('Enroll your child & track their day',
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: Colors.white.withValues(alpha: 0.85))),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_rounded,
+                    color: Colors.white, size: 22),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Compact role card (Teacher / Admin) ───────────────────────────────────────
+class _CompactRoleCard extends StatelessWidget {
+  const _CompactRoleCard({
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -540,13 +728,15 @@ class _RoleCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         child: Container(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md, vertical: AppSpacing.md),
           decoration: BoxDecoration(
             color: isDark ? AppColors.bgDarkSurface : AppColors.bgSurface,
-            borderRadius: BorderRadius.circular(AppRadius.xl),
-            border: Border.all(color: cs.outline.withValues(alpha: 0.35)),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(
+                color: color.withValues(alpha: isDark ? 0.3 : 0.2)),
           ),
           child: Row(
             children: [
@@ -588,7 +778,7 @@ class _RoleCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 1 — Account details form
 // ─────────────────────────────────────────────────────────────────────────────
-class _DetailsStep extends StatelessWidget {
+class _DetailsStep extends StatefulWidget {
   const _DetailsStep({
     required this.formKey,
     required this.role,
@@ -625,9 +815,87 @@ class _DetailsStep extends StatelessWidget {
   final ColorScheme cs;
 
   @override
+  State<_DetailsStep> createState() => _DetailsStepState();
+}
+
+class _DetailsStepState extends State<_DetailsStep> {
+  // Dropdown selections (stored as lowercase for DB consistency)
+  String _relation = 'mother';
+  bool _relationOther = false;
+
+  String _teacherDesig = 'lead teacher';
+  bool _teacherDesigOther = false;
+
+  String _adminDesig = 'center director';
+  bool _adminDesigOther = false;
+
+  // Phone digits only (prefix +91 is locked)
+  final _phoneDigitsCtrl = TextEditingController();
+  final _emergencyPhoneDigitsCtrl = TextEditingController();
+
+  static const _relationOptions = [
+    'mother', 'father', 'guardian', 'grandmother',
+    'grandfather', 'uncle', 'aunt', 'other',
+  ];
+  static const _teacherDesigOptions = [
+    'lead teacher', 'assistant teacher', 'substitute teacher',
+    'special educator', 'coordinator', 'other',
+  ];
+  static const _adminDesigOptions = [
+    'center director', 'manager', 'owner', 'administrator', 'other',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill digits if controller already has a value (e.g. back navigation)
+    final existing = widget.phoneCtrl.text;
+    if (existing.startsWith('+91')) {
+      _phoneDigitsCtrl.text = existing.substring(3);
+    }
+    final existingEmg = widget.emergencyPhoneCtrl.text;
+    if (existingEmg.startsWith('+91')) {
+      _emergencyPhoneDigitsCtrl.text = existingEmg.substring(3);
+    }
+    // Sync digits → controller whenever digits change
+    _phoneDigitsCtrl.addListener(_syncPhone);
+    _emergencyPhoneDigitsCtrl.addListener(_syncEmergencyPhone);
+    // Sync dropdown defaults to controllers
+    _syncRelation(_relation);
+    _syncTeacherDesig(_teacherDesig);
+    _syncAdminDesig(_adminDesig);
+  }
+
+  void _syncPhone() {
+    widget.phoneCtrl.text = '+91${_phoneDigitsCtrl.text.trim()}';
+  }
+
+  void _syncEmergencyPhone() {
+    widget.emergencyPhoneCtrl.text = '+91${_emergencyPhoneDigitsCtrl.text.trim()}';
+  }
+
+  void _syncRelation(String v) => widget.relationCtrl.text = v;
+  void _syncTeacherDesig(String v) => widget.designationCtrl.text = v;
+  void _syncAdminDesig(String v) => widget.adminDesigCtrl.text = v;
+
+  @override
+  void dispose() {
+    _phoneDigitsCtrl.removeListener(_syncPhone);
+    _emergencyPhoneDigitsCtrl.removeListener(_syncEmergencyPhone);
+    _phoneDigitsCtrl.dispose();
+    _emergencyPhoneDigitsCtrl.dispose();
+    super.dispose();
+  }
+
+  String? _req(String? v) => v == null || v.isEmpty ? 'Required' : null;
+
+  @override
   Widget build(BuildContext context) {
+    final cs = widget.cs;
+    final isDark = widget.isDark;
+
     return Form(
-      key: formKey,
+      key: widget.formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -640,16 +908,19 @@ class _DetailsStep extends StatelessWidget {
                   .copyWith(color: cs.onSurface.withValues(alpha: 0.5))),
           const SizedBox(height: AppSpacing.lg),
 
+          // ── Full name
           AuthTextField(
               label: 'Full Name',
               hint: 'Jane Smith',
-              controller: nameCtrl,
+              controller: widget.nameCtrl,
               icon: Icons.person_outline_rounded,
               validator: _req),
+
+          // ── Email
           AuthTextField(
               label: 'Email Address',
               hint: 'jane@example.com',
-              controller: emailCtrl,
+              controller: widget.emailCtrl,
               icon: Icons.email_outlined,
               keyboardType: TextInputType.emailAddress,
               validator: (v) {
@@ -657,21 +928,22 @@ class _DetailsStep extends StatelessWidget {
                 if (!v.contains('@')) return 'Enter a valid email';
                 return null;
               }),
-          AuthTextField(
-              label: 'Phone Number',
-              hint: '+91 98765 43210',
-              controller: phoneCtrl,
-              icon: Icons.phone_outlined,
-              keyboardType: TextInputType.phone,
-              validator: _req),
 
-          // Password
+          // ── Phone with locked +91 prefix
+          _PhoneField(
+            label: 'Phone Number',
+            digitsCtrl: _phoneDigitsCtrl,
+            isDark: isDark,
+            cs: cs,
+          ),
+
+          // ── Password
           _PassField(
               label: 'Password',
               hint: '8+ characters',
-              ctrl: passCtrl,
-              obscure: obscurePass,
-              toggle: onTogglePass,
+              ctrl: widget.passCtrl,
+              obscure: widget.obscurePass,
+              toggle: widget.onTogglePass,
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Required';
                 if (v.length < 8) return 'Min 8 characters';
@@ -680,85 +952,145 @@ class _DetailsStep extends StatelessWidget {
           _PassField(
               label: 'Confirm Password',
               hint: 'Re-enter password',
-              ctrl: confirmCtrl,
-              obscure: obscureConfirm,
-              toggle: onToggleConfirm,
+              ctrl: widget.confirmCtrl,
+              obscure: widget.obscureConfirm,
+              toggle: widget.onToggleConfirm,
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Required';
-                if (v != passCtrl.text) return "Passwords don't match";
+                if (v != widget.passCtrl.text) return "Passwords don't match";
                 return null;
               }),
 
-          AuthTextField(
-              label: 'Referral Code',
-              hint: 'TINY-XXXX  (from your admin)',
-              controller: referralCtrl,
-              icon: Icons.vpn_key_outlined,
-              validator: _req),
+          // ── Referral code (teacher/admin only)
+          if (widget.role != 'parent')
+            AuthTextField(
+                label: 'Referral Code',
+                hint: 'TINY-XXXX  (from your admin)',
+                controller: widget.referralCtrl,
+                icon: Icons.vpn_key_outlined,
+                validator: _req),
 
-          // Role-specific
-          if (role == 'parent') ...[
+          // ── Parent-specific fields
+          if (widget.role == 'parent') ...[
             const _Divider('Emergency contact'),
             AuthTextField(
                 label: 'Contact Name',
                 hint: 'John Smith',
-                controller: emergencyNameCtrl,
+                controller: widget.emergencyNameCtrl,
                 icon: Icons.contact_emergency_outlined,
                 validator: _req),
-            AuthTextField(
-                label: 'Contact Phone',
-                hint: '+91 91234 56789',
-                controller: emergencyPhoneCtrl,
-                icon: Icons.phone_in_talk_outlined,
-                keyboardType: TextInputType.phone,
-                validator: _req),
-            AuthTextField(
-                label: 'Relationship to Child',
-                hint: 'Mother / Father / Guardian',
-                controller: relationCtrl,
-                icon: Icons.people_outline_rounded,
-                validator: _req),
+            _PhoneField(
+              label: 'Contact Phone',
+              digitsCtrl: _emergencyPhoneDigitsCtrl,
+              isDark: isDark,
+              cs: cs,
+            ),
+            // Relationship dropdown
+            _DropdownField<String>(
+              label: 'Relationship to Child',
+              icon: Icons.people_outline_rounded,
+              value: _relation,
+              options: _relationOptions,
+              displayLabel: (v) => _capitalise(v),
+              isDark: isDark,
+              cs: cs,
+              onChanged: (v) {
+                setState(() {
+                  _relation = v!;
+                  _relationOther = v == 'other';
+                  if (!_relationOther) _syncRelation(v);
+                });
+              },
+            ),
+            if (_relationOther)
+              AuthTextField(
+                label: 'Specify relationship',
+                hint: 'e.g. Step-parent, Sibling...',
+                controller: widget.relationCtrl,
+                icon: Icons.edit_outlined,
+                validator: _req,
+              ),
           ],
 
-          if (role == 'teacher') ...[
+          // ── Teacher-specific fields
+          if (widget.role == 'teacher') ...[
             const _Divider('Professional details'),
             AuthTextField(
                 label: 'Staff ID',
                 hint: 'EMP-1234 (optional)',
-                controller: staffIdCtrl,
+                controller: widget.staffIdCtrl,
                 icon: Icons.badge_outlined),
-            AuthTextField(
-                label: 'Designation',
-                hint: 'Lead Teacher / Assistant',
-                controller: designationCtrl,
-                icon: Icons.work_outline_rounded,
-                validator: _req),
+            _DropdownField<String>(
+              label: 'Designation',
+              icon: Icons.work_outline_rounded,
+              value: _teacherDesig,
+              options: _teacherDesigOptions,
+              displayLabel: (v) => _capitalise(v),
+              isDark: isDark,
+              cs: cs,
+              onChanged: (v) {
+                setState(() {
+                  _teacherDesig = v!;
+                  _teacherDesigOther = v == 'other';
+                  if (!_teacherDesigOther) _syncTeacherDesig(v);
+                });
+              },
+            ),
+            if (_teacherDesigOther)
+              AuthTextField(
+                label: 'Specify designation',
+                hint: 'e.g. Therapist, Nurse...',
+                controller: widget.designationCtrl,
+                icon: Icons.edit_outlined,
+                validator: _req,
+              ),
           ],
 
-          if (role == 'admin') ...[
+          // ── Admin-specific fields
+          if (widget.role == 'admin') ...[
             const _Divider('Center details'),
             AuthTextField(
                 label: 'Center Name',
                 hint: 'Little Stars Daycare',
-                controller: centerNameCtrl,
+                controller: widget.centerNameCtrl,
                 icon: Icons.business_outlined,
                 validator: _req),
-            AuthTextField(
-                label: 'Your Designation',
-                hint: 'Center Director / Manager',
-                controller: adminDesigCtrl,
-                icon: Icons.manage_accounts_outlined,
-                validator: _req),
+            _DropdownField<String>(
+              label: 'Your Designation',
+              icon: Icons.manage_accounts_outlined,
+              value: _adminDesig,
+              options: _adminDesigOptions,
+              displayLabel: (v) => _capitalise(v),
+              isDark: isDark,
+              cs: cs,
+              onChanged: (v) {
+                setState(() {
+                  _adminDesig = v!;
+                  _adminDesigOther = v == 'other';
+                  if (!_adminDesigOther) _syncAdminDesig(v);
+                });
+              },
+            ),
+            if (_adminDesigOther)
+              AuthTextField(
+                label: 'Specify designation',
+                hint: 'e.g. Co-founder, Supervisor...',
+                controller: widget.adminDesigCtrl,
+                icon: Icons.edit_outlined,
+                validator: _req,
+              ),
           ],
 
           const SizedBox(height: AppSpacing.lg),
           AuthGradientButton(
-            label: role == 'parent' ? 'Next: Add child info' : 'Create account',
-            icon: role == 'parent'
+            label: widget.role == 'parent'
+                ? 'Next: Add child info'
+                : 'Create account',
+            icon: widget.role == 'parent'
                 ? Icons.arrow_forward_rounded
                 : Icons.check_rounded,
-            onTap: loading ? null : onNext,
-            loading: loading,
+            onTap: widget.loading ? null : widget.onNext,
+            loading: widget.loading,
           ),
           const SizedBox(height: AppSpacing.xxl),
         ],
@@ -766,8 +1098,203 @@ class _DetailsStep extends StatelessWidget {
     );
   }
 
-  String? _req(String? v) => v == null || v.isEmpty ? 'Required' : null;
+  String _capitalise(String v) {
+    if (v.isEmpty) return v;
+    return v[0].toUpperCase() + v.substring(1);
+  }
 }
+
+// ── Locked +91 phone field ─────────────────────────────────────────────────
+class _PhoneField extends StatelessWidget {
+  const _PhoneField({
+    required this.label,
+    required this.digitsCtrl,
+    required this.isDark,
+    required this.cs,
+  });
+  final String label;
+  final TextEditingController digitsCtrl;
+  final bool isDark;
+  final ColorScheme cs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: AppTextStyles.labelBold.copyWith(color: cs.onSurface)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              // Locked prefix badge
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 15),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.bgDarkMuted : AppColors.bgLight,
+                  borderRadius: const BorderRadius.horizontal(
+                      left: Radius.circular(AppRadius.md)),
+                  border: Border.all(
+                      color: cs.outline.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Text('🇮🇳', style: TextStyle(fontSize: 16)),
+                    const SizedBox(width: 6),
+                    Text('+91',
+                        style: AppTextStyles.labelBold
+                            .copyWith(color: cs.onSurface)),
+                  ],
+                ),
+              ),
+              // Digits field
+              Expanded(
+                child: TextFormField(
+                  controller: digitsCtrl,
+                  keyboardType: TextInputType.phone,
+                  maxLength: 10,
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: cs.onSurface),
+                  decoration: InputDecoration(
+                    counterText: '',
+                    hintText: '98765 43210',
+                    hintStyle: AppTextStyles.bodyMuted
+                        .copyWith(color: cs.onSurface.withValues(alpha: 0.35)),
+                    filled: true,
+                    fillColor: isDark
+                        ? AppColors.bgDarkMuted
+                        : AppColors.bgLight,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 15),
+                    border: OutlineInputBorder(
+                      borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(AppRadius.md)),
+                      borderSide: BorderSide(
+                          color: cs.outline.withValues(alpha: 0.4)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(AppRadius.md)),
+                      borderSide: BorderSide(
+                          color: cs.outline.withValues(alpha: 0.4)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(AppRadius.md)),
+                      borderSide: const BorderSide(
+                          color: AppColors.primary, width: 1.8),
+                    ),
+                    errorBorder: OutlineInputBorder(
+                      borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(AppRadius.md)),
+                      borderSide: const BorderSide(
+                          color: AppColors.danger),
+                    ),
+                    focusedErrorBorder: OutlineInputBorder(
+                      borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(AppRadius.md)),
+                      borderSide: const BorderSide(
+                          color: AppColors.danger, width: 1.8),
+                    ),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Required';
+                    if (v.replaceAll(RegExp(r'\D'), '').length != 10) {
+                      return 'Enter 10 digits';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Generic themed dropdown ────────────────────────────────────────────────
+class _DropdownField<T> extends StatelessWidget {
+  const _DropdownField({
+    required this.label,
+    required this.icon,
+    required this.value,
+    required this.options,
+    required this.displayLabel,
+    required this.isDark,
+    required this.cs,
+    required this.onChanged,
+  });
+  final String label;
+  final IconData icon;
+  final T value;
+  final List<T> options;
+  final String Function(T) displayLabel;
+  final bool isDark;
+  final ColorScheme cs;
+  final void Function(T?) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: AppTextStyles.labelBold.copyWith(color: cs.onSurface)),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.bgDarkMuted : AppColors.bgLight,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border:
+                  Border.all(color: cs.outline.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon,
+                    size: 20,
+                    color: cs.onSurface.withValues(alpha: 0.4)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<T>(
+                      value: value,
+                      isExpanded: true,
+                      dropdownColor: isDark
+                          ? AppColors.bgDarkSurface
+                          : AppColors.bgSurface,
+                      style: AppTextStyles.bodyMedium
+                          .copyWith(color: cs.onSurface),
+                      icon: Icon(Icons.keyboard_arrow_down_rounded,
+                          color: cs.onSurface.withValues(alpha: 0.4)),
+                      items: options.map((o) {
+                        return DropdownMenuItem<T>(
+                          value: o,
+                          child: Text(displayLabel(o)),
+                        );
+                      }).toList(),
+                      onChanged: onChanged,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 2 — First child info (parents only)
@@ -780,6 +1307,7 @@ class _ChildInfoStep extends StatelessWidget {
     required this.childGender,
     required this.allergyCtrl,
     required this.medCtrl,
+    required this.classroomCodeCtrl,
     required this.isDark,
     required this.cs,
     required this.loading,
@@ -789,7 +1317,7 @@ class _ChildInfoStep extends StatelessWidget {
   });
 
   final GlobalKey<FormState> formKey;
-  final TextEditingController childNameCtrl, allergyCtrl, medCtrl;
+  final TextEditingController childNameCtrl, allergyCtrl, medCtrl, classroomCodeCtrl;
   final DateTime? childDob;
   final String childGender;
   final bool isDark, loading;
@@ -920,12 +1448,14 @@ class _ChildInfoStep extends StatelessWidget {
                           .copyWith(color: cs.onSurface),
                       items: const [
                         DropdownMenuItem(
-                            value: 'Not specified',
+                            value: 'male',
+                            child: Text('Male')),
+                        DropdownMenuItem(
+                            value: 'female',
+                            child: Text('Female')),
+                        DropdownMenuItem(
+                            value: 'other',
                             child: Text('Prefer not to say')),
-                        DropdownMenuItem(
-                            value: 'Male', child: Text('Male')),
-                        DropdownMenuItem(
-                            value: 'Female', child: Text('Female')),
                       ],
                       onChanged: onGenderChange,
                     ),
@@ -946,7 +1476,35 @@ class _ChildInfoStep extends StatelessWidget {
               controller: medCtrl,
               icon: Icons.medical_information_outlined),
 
-          const SizedBox(height: AppSpacing.lg),
+          // Classroom code (optional — admin gives this on admission)
+          const _Divider('Classroom assignment'),
+          AuthTextField(
+            label: 'Classroom Code',
+            hint: 'e.g. BLUE-A (from admin, optional)',
+            controller: classroomCodeCtrl,
+            icon: Icons.meeting_room_outlined,
+          ),
+          // Note about classroom code
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded,
+                    size: 14,
+                    color: cs.onSurface.withValues(alpha: 0.4)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Leave empty if you don\'t have a code yet — admin can assign your child to a classroom later.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: cs.onSurface.withValues(alpha: 0.45)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: AppSpacing.sm),
 
           // Info note
           Container(

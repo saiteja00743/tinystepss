@@ -12,14 +12,19 @@ Future<void> main() async {
   // Load environment variables
   await dotenv.load(fileName: '.env');
 
-  // Initialize Supabase
+  // Initialize Supabase with deep link callback URL
+  // The custom scheme io.tinysteps://login-callback is registered in AndroidManifest.xml
+  // In Supabase dashboard > Auth > URL Configuration > Redirect URLs, add:
+  //   io.tinysteps://login-callback
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+    authOptions: const FlutterAuthClientOptions(
+      authFlowType: AuthFlowType.pkce,
+    ),
   );
 
   runApp(
-    // Riverpod scope wraps the entire app
     const ProviderScope(child: TinyStepsApp()),
   );
 }
