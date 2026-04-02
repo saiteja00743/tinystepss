@@ -6,6 +6,7 @@ import 'package:tinysteps/core/widgets/bottom_nav_bar.dart';
 import 'package:tinysteps/features/admin/screens/users_screen.dart';
 import 'package:tinysteps/features/admin/screens/classrooms_screen.dart';
 import 'package:tinysteps/features/admin/screens/children_overview_screen.dart';
+import 'package:tinysteps/features/admin/screens/admin_settings_screen.dart';
 
 /// Admin Home Screen — shell with bottom navigation
 class AdminHomeScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     UsersScreen(),
     ClassroomsScreen(),
     ChildrenOverviewScreen(),
+    AdminSettingsScreen(),
   ];
 
   @override
@@ -43,6 +45,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             BottomNavBarItem(icon: Icons.people_rounded, label: 'Users'),
             BottomNavBarItem(icon: Icons.class_rounded, label: 'Classrooms'),
             BottomNavBarItem(icon: Icons.child_care_rounded, label: 'Children'),
+            BottomNavBarItem(icon: Icons.settings_rounded, label: 'Settings'),
           ],
         ),
       ),
